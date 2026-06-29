@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống quản lý thời hạn SSL</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans p-8">
+
+    <div class="max-w-6xl mx-auto bg-white p-6 rounded-lg shadow-md">
+
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <h1 class="text-2xl font-bold text-gray-800">HỆ THỐNG THEO DÕI HẠN SSL</h1>
+            <button onclick="logout()" class="bg-red-500 text-white px-3 py-1 text-sm rounded hover:bg-red-600">
+                Đăng xuất
+            </button>
+        </div>
+
+        <div class="flex gap-4 mb-6 border-b pb-2">
+            <button id="tabMainBtn" onclick="switchView('main')"
+                class="px-4 py-2 font-bold border-b-2 border-blue-600 text-blue-600">
+                Màn hình chính
+            </button>
+            <button id="tabAlertBtn" onclick="switchView('alert')"
+                class="px-4 py-2 font-bold text-gray-500 hover:text-blue-600">
+                Cảnh báo thời gian
+            </button>
+        </div>
+
+        <!-- Chỉ hiện ở tab main -->
+        <div id="mainView">
+            <form id="addForm" class="bg-gray-50 p-4 rounded-md mb-6 flex gap-4 items-end">
+                <div class="flex-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Tên miền website</label>
+                    <input type="text" id="domainInput" placeholder="Ví dụ: google.com" required
+                        class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">VNPT cấp?</label>
+                    <select id="vnptSelect"
+                        class="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="0">Không phải</option>
+                        <option value="1">VNPT cấp</option>
+                    </select>
+                </div>
+                <button type="submit"
+                    class="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 font-medium">
+                    Thêm Website
+                </button>
+                <div class="flex flex-col items-center justify-center px-4 py-2 bg-gray-100 rounded-md border min-w-[80px]">
+                    <span class="text-xs text-gray-500">Tổng số web</span>
+                    <span id="totalCount" class="text-xl font-bold text-gray-800">0</span>
+                </div>
+            </form>
+        </div>
+
+        <!-- hiện tab cảnh báo -->
+        <div id="loadingBar" class="hidden mb-4 text-sm text-blue-600 font-medium animate-pulse">
+            Đang quét SSL... vui lòng chờ
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-gray-800 text-white text-sm">
+                        <th class="p-3">Tên miền</th>
+                        <th class="p-3">Nhà cung cấp SSL</th>
+                        <th class="p-3">Có phải của VNPT?</th>
+                        <th class="p-3">Ngày hết hạn</th>
+                        <th class="p-3">Thời gian còn lại</th>
+                        <th class="p-3">Lần cuối kiểm tra</th>
+                        <th id="thAction" class="p-3 text-center">Xóa</th>
+                    </tr>
+                </thead>
+                <tbody id="websiteTableBody" class="text-gray-700 text-sm">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'main';
+
+        async function loadWebsites() {
+            const loading = document.getElementById('loadingBar');
+            const tbody = document.getElementById('websiteTableBody');
+            const thAction = document.getElementById('thAction');
+ 
+            // hiện loading (scan trước)
+            if (currentTab === 'alert') {
+                loading.classList.remove('hidden');
+                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-400">Đang quét lại toàn bộ...</td></tr>';
+            }
+
+            const url = currentTab === 'main' ? '/api/websites' : '/api/websites/alerts';
+            const res = await fetch(url);
+
+            loading.classList.add('hidden');
+
+            if (res.status === 401) { window.location.reload(); return; }
+
+            const websites = await res.json();
+            tbody.innerHTML = '';
+
+            thAction.style.display = currentTab === 'main' ? 'table-cell' : 'none';
+
+            if (websites.length === 0) {
+                const msg = currentTab === 'alert'
+                    ? 'Không có website nào sắp hết hạn (<=30 ngày)'
+                    : 'Chưa có website nào';
+                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-400">${msg}</td></tr>`;
+                return;
+            }
+
+            websites.forEach(web => {
+                let statusText = '';
+                let daysStyle = '';
+
+                if (web.days_remaining === -999) {
+                    statusText = 'Lỗi SSL / Không thể kết nối';
+                    daysStyle = 'text-gray-400 italic';
+                } else if (web.days_remaining <= 0) {
+                    statusText = 'Đã hết hạn';
+                    daysStyle = 'bg-red-500 text-white font-bold';
+                } else if (web.days_remaining <= 15) {
+                    statusText = `Còn ${web.days_remaining} ngày`;
+                    daysStyle = 'bg-red-500 text-white font-bold';
+                } else if (web.days_remaining <= 30) {
+                    statusText = `Còn ${web.days_remaining} ngày`;
+                    daysStyle = 'bg-yellow-400 text-yellow-900 font-bold';
+                } else {
+                    statusText = `Còn ${web.days_remaining} ngày`;
+                }
+
+                const vnptStyle = web.days_remaining === -999
+                    ? ''
+                    : (web.is_vnpt ? 'bg-green-100 text-green-900 font-medium' : 'bg-yellow-100 text-yellow-900 font-medium');
+                const vnptLabel = web.is_vnpt ? 'VNPT cấp' : 'Không phải';
+
+                let rowHtml = `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="p-3 font-semibold text-gray-900">${web.domain}</td>
+                        <td class="p-3">${web.provider || 'Chưa xác định'}</td>
+                        <td class="p-3 ${vnptStyle}">${vnptLabel}</td>
+                        <td class="p-3">${web.expiry_date || ''}</td>
+                        <td class="p-3 ${daysStyle}">${statusText}</td>
+                        <td class="p-3 text-gray-500 text-xs">${web.last_checked || 'Chưa quét'}</td>
+                `;
+
+                if (currentTab === 'main') {
+                    rowHtml += `
+                        <td class="p-3 text-center">
+                            <button onclick="deleteWeb(${web.id}, '${web.domain}')"
+                                class="text-red-600 font-bold hover:text-red-900 px-2 py-1 border border-red-200 rounded bg-red-50">
+                                X
+                            </button>
+                        </td>
+                    `;
+                }
+
+                rowHtml += `</tr>`;
+                tbody.innerHTML += rowHtml;
+            });
+            if (currentTab === 'main') {
+                document.getElementById('totalCount').textContent = websites.length;
+            }
+        }
+
+        function switchView(tab) {
+            currentTab = tab;
+            const tabMainBtn = document.getElementById('tabMainBtn');
+            const tabAlertBtn = document.getElementById('tabAlertBtn');
+            const mainView = document.getElementById('mainView');
+
+            if (tab === 'main') {
+                tabMainBtn.className = "px-4 py-2 font-bold border-b-2 border-blue-600 text-blue-600";
+                tabAlertBtn.className = "px-4 py-2 font-bold text-gray-500 hover:text-blue-600";
+                mainView.style.display = 'block';
+            } else {
+                tabAlertBtn.className = "px-4 py-2 font-bold border-b-2 border-blue-600 text-blue-600";
+                tabMainBtn.className = "px-4 py-2 font-bold text-gray-500 hover:text-blue-600";
+                mainView.style.display = 'none';
+            }
+            loadWebsites();
+        }
+
+        async function deleteWeb(id, domain) {
+            if (!confirm(`Bạn chắc chắn muốn gỡ website: ${domain}?`)) return;
+            const res = await fetch(`/api/websites/${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.error || 'Không thể xóa website');
+            } else {
+                loadWebsites();
+            }
+        }
+
+        document.getElementById('addForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const domain = document.getElementById('domainInput').value;
+            const is_vnpt = document.getElementById('vnptSelect').value;
+
+            const res = await fetch('/api/websites', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domain, is_vnpt: parseInt(is_vnpt) })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.error || 'Không thể thêm website');
+            } else {
+                document.getElementById('domainInput').value = '';
+                document.getElementById('vnptSelect').value = '0';
+                loadWebsites();
+            }
+        });
+
+        async function logout() {
+            await fetch('/api/logout', { method: 'POST' });
+            window.location.reload();
+        }
+
+        loadWebsites();
+
+        async function updateVnpt(id, value) {
+            await fetch(`/api/websites/${id}/vnpt`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_vnpt: parseInt(value) })
+            });
+        }
+    </script>
+</body>
+</html>
