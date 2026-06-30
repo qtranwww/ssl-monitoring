@@ -3,6 +3,7 @@ const sqlite3 = require('sqlite3').verbose();
 const tls = require('tls');
 const path = require('path');
 const session = require('express-session');
+const cron = require('node-cron');
 
 const app = express();
 const PORT = 3000;
@@ -96,6 +97,24 @@ async function scanAndUpdate(id, domain) {
         );
     });
 }
+
+// Chạy tối đa 10 scan song song, tránh flood
+async function scanAll() {
+    const rows = await new Promise((resolve, reject) =>
+        db.all(`SELECT id, domain FROM websites`, [], (err, r) => err ? reject(err) : resolve(r))
+    );
+    const limit = 10;
+    for (let i = 0; i < rows.length; i += limit) {
+        await Promise.all(rows.slice(i, i + limit).map(r => scanAndUpdate(r.id, r.domain)));
+    }
+    console.log(`[Cron] Đã quét xong ${rows.length} domain`);
+}
+
+// Tự động scan lúc 2 giờ sáng mỗi ngày
+cron.schedule('0 2 * * *', () => {
+    console.log('[Cron] Bắt đầu scan định kỳ...');
+    scanAll();
+});
 
 // log 
 app.post('/api/login', (req, res) => {
