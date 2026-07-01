@@ -4,6 +4,7 @@ const tls = require('tls');
 const path = require('path');
 const session = require('express-session');
 const cron = require('node-cron');
+const ExcelJS = require('exceljs');
 
 const app = express();
 const PORT = 3000;
@@ -230,6 +231,45 @@ app.post('/api/websites/scan-all', requireLogin, async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+app.get('/api/export', requireLogin, async (req, res) => {
+    const rows = await new Promise((resolve, reject) =>
+        db.all(`SELECT domain, provider, is_vnpt, expiry_date, days_remaining, last_checked FROM websites ORDER BY days_remaining ASC`, [], (err, r) => err ? reject(err) : resolve(r))
+    );
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Danh sách SSL');
+
+    sheet.columns = [
+        { header: 'Tên miền',          key: 'domain',         width: 30 },
+        { header: 'Nhà cung cấp',      key: 'provider',       width: 25 },
+        { header: 'VNPT cấp?',         key: 'is_vnpt',        width: 12 },
+        { header: 'Ngày hết hạn',      key: 'expiry_date',    width: 15 },
+        { header: 'Còn lại (ngày)',    key: 'days_remaining',  width: 15 },
+        { header: 'Lần cuối kiểm tra', key: 'last_checked',   width: 20 },
+    ];
+
+    rows.forEach(r => sheet.addRow({
+        ...r,
+        is_vnpt: r.is_vnpt ? 'VNPT cấp' : 'Không phải'
+    }));
+
+    // Tô đỏ những dòng còn dưới 30 ngày
+    sheet.eachRow((row, i) => {
+        if (i === 1) return; // bỏ qua header
+        const days = row.getCell('days_remaining').value;
+        if (days !== -999 && days <= 30) {
+            row.eachCell(cell => {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE0E0' } };
+            });
+        }
+    });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="ssl-report-${Date.now()}.xlsx"`);
+    await workbook.xlsx.write(res);
+    res.end();
 });
 
 app.get('/', (req, res) => {

@@ -12,9 +12,15 @@
 
         <div class="flex justify-between items-center mb-6 border-b pb-4">
             <h1 class="text-2xl font-bold text-gray-800">HỆ THỐNG THEO DÕI HẠN SSL</h1>
-            <button onclick="logout()" class="bg-red-500 text-white px-3 py-1 text-sm rounded hover:bg-red-600">
-                Đăng xuất
-            </button>
+            <div class="flex gap-2">
+                <a href="/api/export"
+                    class="bg-green-600 text-white px-3 py-1 text-sm rounded hover:bg-green-700">
+                    Xuất Excel
+                </a>
+                <button onclick="logout()" class="bg-red-500 text-white px-3 py-1 text-sm rounded hover:bg-red-600">
+                    Đăng xuất
+                </button>
+            </div>
         </div>
 
         <div class="flex gap-4 mb-6 border-b pb-2">
